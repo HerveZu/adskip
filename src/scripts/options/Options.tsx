@@ -5,7 +5,6 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
-import { SkipHistory } from '@/components/SkipHistory'
 import { DEFAULTS, getSettings, setSettings } from '@/utils/storage'
 import type { ExtSettings } from '@/content-scripts/youtube/types'
 
@@ -108,11 +107,6 @@ const Options = () => {
                     </Button>
                     {status && <span className="text-sm text-foreground">{status}</span>}
                 </div>
-
-                <section className="space-y-2 pt-4">
-                    <h2 className="text-base font-semibold">Skip history</h2>
-                    <SkipHistory showClear />
-                </section>
             </div>
         </div>
     )

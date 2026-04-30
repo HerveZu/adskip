@@ -7,7 +7,6 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Spinner } from '@/components/ui/spinner'
-import { SkipHistory } from '@/components/SkipHistory'
 import { formatDurationCompact } from '@/lib/utils'
 import { DEFAULTS, getSettings, setSettings } from '@/utils/storage'
 import type {
@@ -151,8 +150,6 @@ const Popup = () => {
                     onRecheck={recheck}
                     recheckBusy={recheckBusy}
                 />
-
-                <SkipHistory limit={3} />
 
                 <div className="space-y-1.5">
                     <Label htmlFor="api-key" className="text-xs text-muted-foreground">
