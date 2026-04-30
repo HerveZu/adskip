@@ -80,10 +80,10 @@ function createManifest(): Manifest {
         version: pkg.version,
         description: pkg.description ?? '',
         action: {
-            default_popup: './src/scripts/popup/popup.html',
+            default_popup: 'src/scripts/popup/popup.html',
         },
         options_ui: {
-            page: './src/scripts/options/options.html',
+            page: 'src/scripts/options/options.html',
             open_in_tab: true,
         },
         background: {
@@ -91,9 +91,9 @@ function createManifest(): Manifest {
             type: 'module',
         },
         icons: {
-            '16': './assets/icon-16.png',
-            '48': './assets/icon-48.png',
-            '128': './assets/icon-128.png',
+            '16': 'assets/icon-16.png',
+            '48': 'assets/icon-48.png',
+            '128': 'assets/icon-128.png',
         },
         permissions: ['storage', 'scripting'],
         host_permissions: [

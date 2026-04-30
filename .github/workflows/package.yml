@@ -1,16 +1,13 @@
-name: CI
+name: Package extension
 
 on:
     push:
         tags: ['v*']
     workflow_dispatch:
 
-permissions:
-    contents: write
-
 jobs:
-    build:
-        name: typecheck · lint · build
+    package:
+        name: Typecheck · lint · build · zip
         runs-on: ubuntu-latest
 
         steps:
@@ -37,7 +34,7 @@ jobs:
             - name: Build
               run: pnpm build
 
-            - name: Package dist
+            - name: Zip dist
               id: pack
               run: |
                   if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
@@ -50,19 +47,10 @@ jobs:
                   cd dist && zip -r "../${ZIP_NAME}" .
                   echo "zip=${ZIP_NAME}" >> "$GITHUB_OUTPUT"
 
-            - name: Upload dist zip artifact
+            - name: Upload zip artifact
               uses: actions/upload-artifact@v4
               with:
                   name: adskip-dist
                   path: ${{ steps.pack.outputs.zip }}
                   if-no-files-found: error
                   retention-days: 30
-
-            - name: Create GitHub Release
-              if: startsWith(github.ref, 'refs/tags/')
-              uses: softprops/action-gh-release@v2
-              with:
-                  files: ${{ steps.pack.outputs.zip }}
-                  generate_release_notes: true
-                  draft: false
-                  prerelease: ${{ contains(github.ref_name, '-') }}
