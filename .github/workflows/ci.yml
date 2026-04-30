@@ -2,10 +2,11 @@ name: CI
 
 on:
     push:
-        branches: [main]
-    pull_request:
-        branches: [main]
+        tags: ['v*']
     workflow_dispatch:
+
+permissions:
+    contents: write
 
 jobs:
     build:
@@ -39,16 +40,29 @@ jobs:
             - name: Package dist
               id: pack
               run: |
-                  VERSION=$(node -p "require('./package.json').version")
-                  SHORT_SHA=$(git rev-parse --short HEAD)
-                  ZIP_NAME="adskip-${VERSION}-${SHORT_SHA}.zip"
+                  if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+                      ZIP_NAME="adskip-${GITHUB_REF_NAME}.zip"
+                  else
+                      VERSION=$(node -p "require('./package.json').version")
+                      SHORT_SHA=$(git rev-parse --short HEAD)
+                      ZIP_NAME="adskip-${VERSION}-${SHORT_SHA}.zip"
+                  fi
                   cd dist && zip -r "../${ZIP_NAME}" .
                   echo "zip=${ZIP_NAME}" >> "$GITHUB_OUTPUT"
 
-            - name: Upload dist zip
+            - name: Upload dist zip artifact
               uses: actions/upload-artifact@v4
               with:
                   name: adskip-dist
                   path: ${{ steps.pack.outputs.zip }}
                   if-no-files-found: error
                   retention-days: 30
+
+            - name: Create GitHub Release
+              if: startsWith(github.ref, 'refs/tags/')
+              uses: softprops/action-gh-release@v2
+              with:
+                  files: ${{ steps.pack.outputs.zip }}
+                  generate_release_notes: true
+                  draft: false
+                  prerelease: ${{ contains(github.ref_name, '-') }}
