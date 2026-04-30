@@ -53,29 +53,34 @@ function refreshVideoId() {
     if (next !== currentVideoId) {
         currentVideoId = next
         window.dispatchEvent(new CustomEvent('adskip:videochange'))
-        if (next) scheduleStuckCheck(next)
+        if (next) primeForVideo(next)
     }
 }
 
-// Safety net: if no status arrives within ~7s for a new videoId, ask the
-// MAIN-world inject to force a CC-toggle fetch. Covers the case where
-// inject.ts loaded but ensureCaptions ran before the player was ready, or
-// the tab was open before the extension was installed/reloaded.
-function scheduleStuckCheck(videoId: string) {
-    setTimeout(() => {
-        if (videoId !== currentVideoId) return
-        if (captionsByVideo.has(videoId)) return
-        const s = captionStatusByVideo.get(videoId)
-        if (s && s !== 'pending') return
-        window.postMessage(
-            { source: 'adskip-content', type: 'force-fetch', videoId },
-            location.origin
-        )
-    }, 7000)
+// On every new videoId: provisionally mark the status as 'fetching' so the
+// popup never sits on "pending", and schedule two force-fetch retries in
+// case the inject's natural ensureCaptions failed to land a status.
+function primeForVideo(videoId: string) {
+    if (!captionStatusByVideo.get(videoId)) {
+        captionStatusByVideo.set(videoId, 'fetching')
+        window.dispatchEvent(new CustomEvent('adskip:status'))
+    }
+    const retry = (delay: number) => {
+        setTimeout(() => {
+            if (videoId !== currentVideoId) return
+            if (captionsByVideo.has(videoId)) return
+            window.postMessage(
+                { source: 'adskip-content', type: 'force-fetch', videoId },
+                location.origin
+            )
+        }, delay)
+    }
+    retry(5000)
+    retry(15000)
 }
 
 refreshVideoId()
-if (currentVideoId) scheduleStuckCheck(currentVideoId)
+if (currentVideoId) primeForVideo(currentVideoId)
 window.addEventListener('yt-navigate-finish', refreshVideoId)
 window.addEventListener('popstate', refreshVideoId)
 
