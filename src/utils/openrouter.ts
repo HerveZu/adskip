@@ -6,16 +6,29 @@ import type {
 
 const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions'
 
-const SYSTEM_PROMPT = `You detect in-video sponsor reads, promotional segments, and self-promotion in YouTube transcripts.
+const SYSTEM_PROMPT = `You detect EXPLICIT third-party sponsor reads in YouTube transcripts.
+
+A segment qualifies ONLY if the captions contain an unambiguous sponsorship cue, such as:
+- "this video is sponsored by …"
+- "thanks to <name> for sponsoring this video"
+- "brought to you by …"
+- "today's video is made possible by …"
+- "use code <X> at <brand>" / "go to <brand>.com/<channel>"
+- equivalent explicit paid-promotion language
+
+Do NOT flag:
+- general brand mentions, reviews, or recommendations in editorial content
+- channel self-promotion: subscribe / like / notifications / merch / Patreon / Discord / newsletter / "support the channel"
+- references to the creator's other videos or platforms
+- ambiguous transitions that don't include an explicit sponsorship cue
+
 Return STRICT JSON of the form:
 {"segments":[{"startMs":<int>,"endMs":<int>,"summary":"<<=140 chars>"}]}
-Rules:
-- Use the timestamps that appear in the input.
-- A segment must be a single contiguous block of captions that constitutes a sponsor / paid promo / merch / Patreon / channel-promo read.
-- Do NOT flag normal editorial content, even if it mentions a brand.
-- summary: one short sentence describing what is being advertised.
-- If there are none, return {"segments":[]}.
-- Output ONLY the JSON object, no prose, no code fences.`
+
+Use the timestamps from the input. Each segment must be a single contiguous block of captions covering the explicit sponsor read from the cue line through the natural transition back to editorial content (typically including the call-to-action / URL / promo code).
+summary: one short sentence naming what is being advertised.
+If there are no segments matching these strict criteria, return {"segments":[]}.
+Output ONLY the JSON object, no prose, no code fences.`
 
 interface RouterCallOpts {
     apiKey: string
