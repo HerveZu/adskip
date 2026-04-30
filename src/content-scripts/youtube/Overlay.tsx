@@ -1,55 +1,79 @@
+import { useEffect, useRef } from 'react'
+import { Megaphone } from 'lucide-react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { formatDurationCompact } from '@/lib/utils'
 import type { AdSegment } from './types'
 
 interface Props {
     segment: AdSegment
     secondsUntilSkip: number
     autoSkip: boolean
+    playerRect: DOMRect | null
     onCancel: () => void
+    onDismiss: () => void
 }
 
-export default function Overlay({ segment, secondsUntilSkip, autoSkip, onCancel }: Props) {
+const AUTO_DISMISS_MS = 5_000
+
+export default function Overlay({
+    segment,
+    secondsUntilSkip,
+    autoSkip,
+    playerRect,
+    onCancel,
+    onDismiss,
+}: Props) {
+    const onDismissRef = useRef(onDismiss)
+    useEffect(() => {
+        onDismissRef.current = onDismiss
+    })
+    useEffect(() => {
+        const id = window.setTimeout(() => onDismissRef.current(), AUTO_DISMISS_MS)
+        return () => clearTimeout(id)
+    }, [])
+
+    const top = playerRect ? Math.max(8, playerRect.top + 12) : 80
+    const right = playerRect
+        ? Math.max(8, window.innerWidth - playerRect.right + 12)
+        : 24
+    const duration = formatDurationCompact(segment.endMs - segment.startMs)
+    const headline =
+        autoSkip && secondsUntilSkip > 0
+            ? `Sponsor · skip in ${secondsUntilSkip}s`
+            : autoSkip
+              ? 'Sponsor · skipping…'
+              : 'Sponsor detected'
+
     return (
-        <div
-            className="fixed w-[420px] max-w-[calc(100vw-2rem)] rounded-xl bg-neutral-900/95 p-5 text-base text-neutral-50 shadow-2xl ring-1 ring-white/10 backdrop-blur-md"
-            style={{ top: 80, right: 24, pointerEvents: 'auto', zIndex: 2147483646 }}
+        <Alert
+            variant="destructive"
+            className="shadow-lg"
+            style={{
+                position: 'fixed',
+                top,
+                right,
+                width: 320,
+                maxWidth: 'calc(100vw - 24px)',
+                pointerEvents: 'auto',
+                zIndex: 2147483646,
+            }}
         >
-            <div className="mb-3 flex items-center justify-between">
-                <span className="rounded-full bg-rose-500/90 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-white">
-                    Ad detected
-                </span>
-                {autoSkip && secondsUntilSkip > 0 && (
-                    <span className="text-base font-semibold text-neutral-200">
-                        Skipping in {secondsUntilSkip}s
+            <Megaphone />
+            <AlertTitle>{headline}</AlertTitle>
+            <AlertDescription>
+                <p className="text-card-foreground">{segment.summary}</p>
+                <div className="flex w-full items-center justify-between gap-2 pt-1">
+                    <span className="font-mono text-xs text-muted-foreground">
+                        {duration}
                     </span>
-                )}
-                {autoSkip && secondsUntilSkip === 0 && (
-                    <span className="text-base font-semibold text-emerald-400">
-                        Skipping…
-                    </span>
-                )}
-            </div>
-            <p className="mb-4 leading-snug text-neutral-50">{segment.summary}</p>
-            <div className="flex items-center justify-between gap-3 text-sm text-neutral-400">
-                <span className="font-mono">
-                    {fmt(segment.startMs)} – {fmt(segment.endMs)}
-                </span>
-                {autoSkip && (
-                    <button
-                        type="button"
-                        onClick={onCancel}
-                        className="rounded-md bg-white/15 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/25"
-                    >
-                        Don't skip
-                    </button>
-                )}
-            </div>
-        </div>
+                    {autoSkip && (
+                        <Button variant="secondary" size="sm" onClick={onCancel}>
+                            Don't skip
+                        </Button>
+                    )}
+                </div>
+            </AlertDescription>
+        </Alert>
     )
-}
-
-function fmt(ms: number) {
-    const s = Math.floor(ms / 1000)
-    const m = Math.floor(s / 60)
-    const r = s % 60
-    return `${m}:${r.toString().padStart(2, '0')}`
 }

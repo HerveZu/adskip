@@ -27,6 +27,15 @@ export interface ExtSettings {
     prerollSeconds: number
 }
 
+export interface SkippedRecord {
+    id: string
+    videoId: string
+    videoTitle: string
+    summary: string
+    durationMs: number
+    skippedAt: number
+}
+
 export type RuntimeMessage =
     | { type: 'ANALYZE_CAPTIONS'; videoId: string; payload: CaptionPayload; force?: boolean }
     | { type: 'PING_OPENROUTER' }
@@ -34,6 +43,9 @@ export type RuntimeMessage =
     | { type: 'CLEAR_CACHE' }
     | { type: 'GET_STATE' }
     | { type: 'RECHECK' }
+    | { type: 'RECORD_SKIP'; record: SkippedRecord }
+    | { type: 'GET_SKIP_HISTORY' }
+    | { type: 'CLEAR_SKIP_HISTORY' }
 
 export type CaptionStatus =
     | 'pending'

@@ -1,6 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { CaptionsOff, Check, X } from 'lucide-react'
 import styles from '@/styles/index.css?inline'
+import { Alert, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { formatDurationCompact } from '@/lib/utils'
 import Overlay from './Overlay'
 import { computeSkipState } from './skipController'
 import type {
@@ -135,10 +139,31 @@ chrome.runtime.onMessage.addListener(
     }
 )
 
+function getPlayerRect(): DOMRect | null {
+    const fs = document.fullscreenElement as HTMLElement | null
+    const p = fs ?? document.querySelector<HTMLElement>('#movie_player')
+    return p?.getBoundingClientRect() ?? null
+}
+
+// Schedules a one-shot dismiss N ms after mount. The parent's callback can
+// safely change identity on every render — we resolve through a ref so the
+// timer isn't constantly reset.
+function useAutoDismiss(onDismiss: () => void, ms: number) {
+    const ref = useRef(onDismiss)
+    useEffect(() => {
+        ref.current = onDismiss
+    })
+    useEffect(() => {
+        const id = window.setTimeout(() => ref.current(), ms)
+        return () => clearTimeout(id)
+    }, [ms])
+}
+
 function App() {
     const [videoId, setVideoId] = useState<string | null>(currentVideoId)
     const [segments, setSegments] = useState<AdSegment[]>([])
     const [cancelled, setCancelled] = useState<Set<string>>(new Set())
+    const [silenced, setSilenced] = useState<Set<string>>(new Set())
     const [tMs, setTMs] = useState(0)
     const [video, setVideo] = useState<HTMLVideoElement | null>(null)
     const [settings, setSettings] = useState({ autoSkip: true, prerollSeconds: 10 })
@@ -149,6 +174,26 @@ function App() {
         seconds: number
         at: number
     } | null>(null)
+    const [playerRect, setPlayerRect] = useState<DOMRect | null>(getPlayerRect())
+
+    useEffect(() => {
+        const update = () => setPlayerRect(getPlayerRect())
+        update()
+        const ro = new ResizeObserver(update)
+        const p = document.querySelector('#movie_player')
+        if (p) ro.observe(p)
+        window.addEventListener('resize', update)
+        window.addEventListener('scroll', update, { passive: true })
+        document.addEventListener('fullscreenchange', update)
+        const id = window.setInterval(update, 500)
+        return () => {
+            ro.disconnect()
+            window.removeEventListener('resize', update)
+            window.removeEventListener('scroll', update)
+            document.removeEventListener('fullscreenchange', update)
+            clearInterval(id)
+        }
+    }, [])
 
     useEffect(() => {
         chrome.storage.local.get(['autoSkip', 'prerollSeconds']).then(s => {
@@ -172,6 +217,7 @@ function App() {
         const onChange = () => {
             setVideoId(currentVideoId)
             setCancelled(new Set())
+            setSilenced(new Set())
             setToastDismissed(false)
             setLastSkipped(null)
         }
@@ -229,28 +275,55 @@ function App() {
     })
 
     useEffect(() => {
-        if (skip.shouldSkipTo == null || !video || !skip.activeWarning) return
+        if (skip.shouldSkipTo == null || !video || !skip.activeWarning || !videoId) return
         if (Math.abs(video.currentTime - skip.shouldSkipTo) < 0.5) return
         const seg = skip.activeWarning
-        const seconds = Math.round((seg.endMs - seg.startMs) / 1000)
+        const durationMs = seg.endMs - seg.startMs
+        const at = Date.now()
         video.currentTime = skip.shouldSkipTo
-        setLastSkipped({ segId: seg.id, seconds, at: Date.now() })
-    }, [skip.shouldSkipTo, video, skip.activeWarning])
+        setLastSkipped({ segId: seg.id, seconds: Math.round(durationMs / 1000), at })
+
+        const title = (document.title || '').replace(/\s*-\s*YouTube\s*$/, '').trim()
+        chrome.runtime
+            .sendMessage<RuntimeMessage>({
+                type: 'RECORD_SKIP',
+                record: {
+                    id: `${videoId}-${seg.id}-${at}`,
+                    videoId,
+                    videoTitle: title,
+                    summary: seg.summary,
+                    durationMs,
+                    skippedAt: at,
+                },
+            })
+            .catch(() => {})
+    }, [skip.shouldSkipTo, video, skip.activeWarning, videoId])
 
     const toastVisible =
         !toastDismissed &&
         videoId !== null &&
         (captionStatus === 'unavailable' || captionStatus === 'fetch-failed')
 
+    const showWarning =
+        !!skip.activeWarning && !silenced.has(skip.activeWarning.id)
+
     return (
         <>
-            {skip.activeWarning && (
+            {showWarning && skip.activeWarning && (
                 <Overlay
                     segment={skip.activeWarning}
                     secondsUntilSkip={skip.secondsUntilSkip ?? 0}
                     autoSkip={settings.autoSkip}
+                    playerRect={playerRect}
                     onCancel={() =>
                         setCancelled(prev => {
+                            const next = new Set(prev)
+                            next.add(skip.activeWarning!.id)
+                            return next
+                        })
+                    }
+                    onDismiss={() =>
+                        setSilenced(prev => {
                             const next = new Set(prev)
                             next.add(skip.activeWarning!.id)
                             return next
@@ -261,6 +334,7 @@ function App() {
             {toastVisible && (
                 <PlayerToast
                     status={captionStatus}
+                    playerRect={playerRect}
                     onDismiss={() => setToastDismissed(true)}
                 />
             )}
@@ -268,6 +342,7 @@ function App() {
                 <SkippedToast
                     key={lastSkipped.at}
                     seconds={lastSkipped.seconds}
+                    playerRect={playerRect}
                     onDone={() => setLastSkipped(null)}
                 />
             )}
@@ -275,52 +350,96 @@ function App() {
     )
 }
 
-function SkippedToast({ seconds, onDone }: { seconds: number; onDone: () => void }) {
-    useEffect(() => {
-        const id = window.setTimeout(onDone, 5000)
-        return () => clearTimeout(id)
-    }, [onDone])
+function topRightOnPlayer(rect: DOMRect | null) {
+    if (!rect) return { top: 80, right: 24 }
+    return {
+        top: Math.max(8, rect.top + 16),
+        right: Math.max(8, window.innerWidth - rect.right + 16),
+    }
+}
+
+function SkippedToast({
+    seconds,
+    playerRect,
+    onDone,
+}: {
+    seconds: number
+    playerRect: DOMRect | null
+    onDone: () => void
+}) {
+    useAutoDismiss(onDone, 5000)
     return (
-        <div
-            className="fixed flex items-center gap-2 rounded-lg bg-emerald-600/95 px-4 py-3 text-sm font-medium text-white shadow-2xl ring-1 ring-emerald-300/30 backdrop-blur-md"
-            style={{ top: 80, right: 24, pointerEvents: 'auto', zIndex: 2147483646 }}
+        <Alert
+            className="shadow-lg"
+            style={{
+                position: 'fixed',
+                ...topRightOnPlayer(playerRect),
+                width: 'auto',
+                pointerEvents: 'auto',
+                zIndex: 2147483646,
+            }}
         >
-            <span aria-hidden>✓</span>
-            <span>Skipped {seconds}s of sponsored content</span>
-        </div>
+            <Check />
+            <AlertTitle>
+                Skipped {formatDurationCompact(seconds * 1000)} of sponsored content
+            </AlertTitle>
+        </Alert>
     )
 }
 
 function PlayerToast({
     status,
+    playerRect,
     onDismiss,
 }: {
     status: CaptionStatus
+    playerRect: DOMRect | null
     onDismiss: () => void
 }) {
-    useEffect(() => {
-        const id = window.setTimeout(onDismiss, 8000)
-        return () => clearTimeout(id)
-    }, [onDismiss])
+    useAutoDismiss(onDismiss, 5000)
     const text =
         status === 'unavailable'
-            ? 'AdSkip: this video has no captions — sponsor detection isn’t possible.'
-            : 'AdSkip: couldn’t fetch the caption track for this video.'
+            ? 'No captions on this video — sponsor detection unavailable.'
+            : 'Couldn’t fetch the caption track for this video.'
     return (
-        <div
-            className="fixed flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-lg bg-neutral-900/95 px-4 py-3 text-sm text-neutral-100 shadow-2xl ring-1 ring-white/10 backdrop-blur-md"
-            style={{ top: 80, right: 24, pointerEvents: 'auto', zIndex: 2147483646 }}
+        <Alert
+            className="shadow-lg"
+            style={{
+                position: 'fixed',
+                ...topRightOnPlayer(playerRect),
+                width: 320,
+                maxWidth: 'calc(100vw - 24px)',
+                pointerEvents: 'auto',
+                zIndex: 2147483646,
+            }}
         >
-            <span>{text}</span>
-            <button
-                type="button"
-                onClick={onDismiss}
-                className="rounded-md bg-white/15 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/25"
-            >
-                Dismiss
-            </button>
-        </div>
+            <CaptionsOff />
+            <AlertTitle>AdSkip</AlertTitle>
+            <div className="col-start-2 flex items-center justify-between gap-2 pt-1">
+                <span className="text-sm text-muted-foreground">{text}</span>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={onDismiss}
+                    aria-label="Dismiss"
+                >
+                    <X className="size-4" />
+                </Button>
+            </div>
+        </Alert>
     )
+}
+
+// Host stays in <body> so the React tree is guaranteed to render. The
+// overlay/toasts use position:fixed and compute their coordinates from the
+// player's bounding rect — visually anchored to the player, no DOM move
+// required. On fullscreen, document.body is hidden by the fullscreen tree,
+// so we re-parent the host into the fullscreen element and back.
+// Inside a shadow root, :root doesn't match (it only matches <html>), so all
+// the design tokens defined under :root in the compiled CSS would be missing.
+// Add :host as an alias so the same variables apply to the shadow scope.
+function shadowSafeStyles(css: string): string {
+    return css.replace(/(^|[^.-])(:root\b)/g, '$1:host, :root')
 }
 
 function mount() {
@@ -331,11 +450,18 @@ function mount() {
     document.body.appendChild(host)
     const shadow = host.attachShadow({ mode: 'open' })
     const styleEl = document.createElement('style')
-    styleEl.textContent = styles
+    styleEl.textContent = shadowSafeStyles(styles)
     shadow.appendChild(styleEl)
     const reactRoot = document.createElement('div')
+    reactRoot.className = 'dark font-sans'
     shadow.appendChild(reactRoot)
     createRoot(reactRoot).render(<App />)
+
+    document.addEventListener('fullscreenchange', () => {
+        const fs = document.fullscreenElement as HTMLElement | null
+        const target = fs ?? document.body
+        if (host.parentElement !== target) target.appendChild(host)
+    })
 }
 
 if (document.body) mount()

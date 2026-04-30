@@ -1,0 +1,54 @@
+name: CI
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+        branches: [main]
+    workflow_dispatch:
+
+jobs:
+    build:
+        name: typecheck · lint · build
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: pnpm/action-setup@v4
+              with:
+                  version: 10
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 20
+                  cache: pnpm
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Typecheck
+              run: pnpm typecheck
+
+            - name: Lint
+              run: pnpm lint
+
+            - name: Build
+              run: pnpm build
+
+            - name: Package dist
+              id: pack
+              run: |
+                  VERSION=$(node -p "require('./package.json').version")
+                  SHORT_SHA=$(git rev-parse --short HEAD)
+                  ZIP_NAME="adskip-${VERSION}-${SHORT_SHA}.zip"
+                  cd dist && zip -r "../${ZIP_NAME}" .
+                  echo "zip=${ZIP_NAME}" >> "$GITHUB_OUTPUT"
+
+            - name: Upload dist zip
+              uses: actions/upload-artifact@v4
+              with:
+                  name: adskip-dist
+                  path: ${{ steps.pack.outputs.zip }}
+                  if-no-files-found: error
+                  retention-days: 30

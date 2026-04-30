@@ -3,7 +3,12 @@ import type {
     CaptionPayload,
     RuntimeMessage,
 } from '@/content-scripts/youtube/types'
-import { getSettings } from '@/utils/storage'
+import {
+    clearSkipHistory,
+    getSettings,
+    getSkipHistory,
+    recordSkip,
+} from '@/utils/storage'
 import { analyzeCaptions, pingOpenRouter } from '@/utils/openrouter'
 
 const TAG = '[adskip:bg]'
@@ -41,6 +46,18 @@ chrome.runtime.onMessage.addListener((msg: RuntimeMessage, sender, sendResponse)
     }
     if (msg.type === 'CLEAR_CACHE') {
         chrome.storage.session.clear().then(() => sendResponse({ ok: true }))
+        return true
+    }
+    if (msg.type === 'RECORD_SKIP') {
+        recordSkip(msg.record).then(() => sendResponse({ ok: true }))
+        return true
+    }
+    if (msg.type === 'GET_SKIP_HISTORY') {
+        getSkipHistory().then(history => sendResponse({ history }))
+        return true
+    }
+    if (msg.type === 'CLEAR_SKIP_HISTORY') {
+        clearSkipHistory().then(() => sendResponse({ ok: true }))
         return true
     }
 })

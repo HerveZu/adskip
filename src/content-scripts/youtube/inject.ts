@@ -1,6 +1,7 @@
 // MAIN-world script: monkey-patches fetch + XHR to capture YouTube's
-// timedtext caption JSON, and auto-fetches the caption track from
-// ytInitialPlayerResponse when the user hasn't turned on CC.
+// timedtext caption JSON, and — when the user has CC off — briefly clicks
+// YouTube's own CC button so the player fetches captions, which our
+// patched fetch then intercepts.
 
 ;(() => {
     if ((window as unknown as { __adskipInjected?: boolean }).__adskipInjected) return
@@ -61,7 +62,7 @@
                         postCaptions(url, j)
                     })
                     .catch(() => {
-                        /* not JSON (e.g. xml/srv3 format) — ignore */
+                        /* not JSON — ignore */
                     })
             } catch (e) {
                 console.warn(TAG, 'fetch clone failed', e)
@@ -108,133 +109,81 @@
         return origSend.call(this, body)
     }
 
-    interface CaptionTrack {
-        baseUrl: string
-        languageCode?: string
-        kind?: string
-        vssId?: string
-    }
-
     function readVideoId(): string | null {
         if (location.pathname !== '/watch') return null
         return new URLSearchParams(location.search).get('v')
     }
 
-    type PlayerResponse = {
-        videoDetails?: { videoId?: string }
-        captions?: {
-            playerCaptionsTracklistRenderer?: { captionTracks?: CaptionTrack[] }
+    function findCcButton(): HTMLButtonElement | null {
+        return document.querySelector<HTMLButtonElement>('.ytp-subtitles-button')
+    }
+
+    function isVisible(el: HTMLElement): boolean {
+        if (!el.offsetParent && getComputedStyle(el).position !== 'fixed') return false
+        return getComputedStyle(el).display !== 'none'
+    }
+
+    async function waitForCcButton(timeoutMs: number): Promise<HTMLButtonElement | null> {
+        const start = Date.now()
+        while (Date.now() - start < timeoutMs) {
+            const btn = findCcButton()
+            if (btn && isVisible(btn)) return btn
+            await new Promise(r => setTimeout(r, 150))
         }
+        return null
     }
 
-    function readPlayerResponse(): PlayerResponse | null {
-        const w = window as unknown as {
-            ytInitialPlayerResponse?: PlayerResponse
-            ytplayer?: { config?: { args?: { raw_player_response?: PlayerResponse } } }
+    async function waitForIntercept(videoId: string, timeoutMs: number): Promise<boolean> {
+        const start = Date.now()
+        while (Date.now() - start < timeoutMs) {
+            if (interceptedVideos.has(videoId)) return true
+            await new Promise(r => setTimeout(r, 100))
         }
-        return (
-            w.ytInitialPlayerResponse ??
-            w.ytplayer?.config?.args?.raw_player_response ??
-            null
-        )
+        return false
     }
 
-    function waitForPlayerResponse(timeoutMs: number): Promise<PlayerResponse | null> {
-        return new Promise(resolve => {
-            const start = Date.now()
-            const tick = () => {
-                const r = readPlayerResponse()
-                if (r) {
-                    resolve(r)
-                    return
-                }
-                if (Date.now() - start > timeoutMs) {
-                    resolve(null)
-                    return
-                }
-                setTimeout(tick, 100)
-            }
-            tick()
-        })
-    }
-
-    function pickTrack(tracks: CaptionTrack[]): CaptionTrack {
-        const englishManual = tracks.find(
-            t => t.languageCode?.startsWith('en') && t.kind !== 'asr'
-        )
-        if (englishManual) return englishManual
-        const english = tracks.find(t => t.languageCode?.startsWith('en'))
-        if (english) return english
-        const manual = tracks.find(t => t.kind !== 'asr')
-        return manual ?? tracks[0]
-    }
-
-    function withJson3(url: string): string {
-        try {
-            const u = new URL(url, location.origin)
-            u.searchParams.set('fmt', 'json3')
-            return u.toString()
-        } catch {
-            return url + (url.includes('?') ? '&' : '?') + 'fmt=json3'
-        }
-    }
-
-    async function tryAutoFetch(videoId: string): Promise<void> {
+    async function ensureCaptions(videoId: string): Promise<void> {
         if (handledVideos.has(videoId)) return
         handledVideos.add(videoId)
 
-        // Give YouTube ~1.5s to fetch captions itself if CC is on.
+        // Give YouTube a moment to fetch captions itself if CC is already on.
         await new Promise(r => setTimeout(r, 1500))
         if (interceptedVideos.has(videoId)) return
 
         postStatus(videoId, 'fetching')
 
-        const pr = await waitForPlayerResponse(8000)
-        if (!pr) {
-            postStatus(videoId, 'fetch-failed')
-            return
-        }
-        const tracks = pr.captions?.playerCaptionsTracklistRenderer?.captionTracks
-        if (!Array.isArray(tracks) || tracks.length === 0) {
+        const btn = await waitForCcButton(10000)
+        if (!btn) {
             postStatus(videoId, 'unavailable')
             return
         }
 
-        const track = pickTrack(tracks)
-        if (!track?.baseUrl) {
-            postStatus(videoId, 'unavailable')
-            return
+        const wasPressed = btn.getAttribute('aria-pressed') === 'true'
+
+        // Toggle CC on only if it was off — never disrupt a user who already has it on.
+        if (!wasPressed) btn.click()
+
+        const ok = await waitForIntercept(videoId, 5000)
+
+        // Restore original state if we changed it.
+        if (!wasPressed && btn.getAttribute('aria-pressed') === 'true') {
+            btn.click()
         }
 
-        if (interceptedVideos.has(videoId)) return
-
-        const url = withJson3(track.baseUrl)
-        try {
-            const res = await origFetch(url, { credentials: 'include' })
-            if (!res.ok) {
-                postStatus(videoId, 'fetch-failed')
-                return
-            }
-            const json = await res.json()
-            interceptedVideos.add(videoId)
-            postCaptions(url, json)
-        } catch (e) {
-            console.warn(TAG, 'auto-fetch failed', e)
-            postStatus(videoId, 'fetch-failed')
-        }
+        if (!ok) postStatus(videoId, 'fetch-failed')
     }
 
-    function maybeAutoFetch() {
+    function maybeRun() {
         const id = readVideoId()
         if (!id) return
-        tryAutoFetch(id)
+        ensureCaptions(id)
     }
 
-    window.addEventListener('yt-navigate-finish', () => setTimeout(maybeAutoFetch, 100))
+    window.addEventListener('yt-navigate-finish', () => setTimeout(maybeRun, 500))
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', maybeAutoFetch, { once: true })
+        document.addEventListener('DOMContentLoaded', maybeRun, { once: true })
     } else {
-        maybeAutoFetch()
+        maybeRun()
     }
 
     console.debug(TAG, 'installed')

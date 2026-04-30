@@ -1,4 +1,14 @@
 import { useEffect, useState } from 'react'
+import { Check, X, RotateCw, Megaphone } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Spinner } from '@/components/ui/spinner'
+import { SkipHistory } from '@/components/SkipHistory'
+import { formatDurationCompact } from '@/lib/utils'
 import { DEFAULTS, getSettings, setSettings } from '@/utils/storage'
 import type {
     AdSegment,
@@ -10,7 +20,10 @@ import type {
 const Popup = () => {
     const [s, setS] = useState<ExtSettings>(DEFAULTS)
     const [loading, setLoading] = useState(true)
-    const [status, setStatus] = useState<string | null>(null)
+    const [status, setStatus] = useState<{
+        text: string
+        kind: 'ok' | 'err' | 'info'
+    } | null>(null)
     const [busy, setBusy] = useState(false)
     const [tab, setTab] = useState<TabState | null>(null)
     const [tabError, setTabError] = useState<string | null>(null)
@@ -25,7 +38,6 @@ const Popup = () => {
 
     useEffect(() => {
         let cancelled = false
-
         const poll = async () => {
             try {
                 const [activeTab] = await chrome.tabs.query({
@@ -57,7 +69,6 @@ const Popup = () => {
                 }
             }
         }
-
         poll()
         const id = window.setInterval(poll, 1000)
         return () => {
@@ -73,15 +84,19 @@ const Popup = () => {
 
     const test = async () => {
         setBusy(true)
-        setStatus('Testing…')
+        setStatus({ text: 'Testing…', kind: 'info' })
         try {
             const r = (await chrome.runtime.sendMessage({ type: 'PING_OPENROUTER' })) as {
                 ok: boolean
                 error?: string
             }
-            setStatus(r.ok ? '✓ OpenRouter reachable' : `✗ ${r.error ?? 'failed'}`)
+            setStatus(
+                r.ok
+                    ? { text: 'OpenRouter reachable', kind: 'ok' }
+                    : { text: r.error ?? 'failed', kind: 'err' }
+            )
         } catch (e) {
-            setStatus(`✗ ${(e as Error).message}`)
+            setStatus({ text: (e as Error).message, kind: 'err' })
         } finally {
             setBusy(false)
         }
@@ -98,9 +113,9 @@ const Popup = () => {
             const r = (await chrome.tabs.sendMessage(activeTab.id, {
                 type: 'RECHECK',
             } as RuntimeMessage)) as { ok: boolean; error?: string }
-            if (!r.ok) setStatus(`✗ ${r.error ?? 'recheck failed'}`)
+            if (!r.ok) setStatus({ text: r.error ?? 'recheck failed', kind: 'err' })
         } catch (e) {
-            setStatus(`✗ ${(e as Error).message}`)
+            setStatus({ text: (e as Error).message, kind: 'err' })
         } finally {
             setRecheckBusy(false)
         }
@@ -108,69 +123,96 @@ const Popup = () => {
 
     if (loading) {
         return (
-            <div className="w-96 bg-neutral-900 p-6 text-sm text-neutral-300">Loading…</div>
+            <div className="dark font-sans">
+                <div className="flex w-96 items-center gap-2 bg-background p-6 text-sm text-muted-foreground">
+                    <Spinner />
+                    Loading…
+                </div>
+            </div>
         )
     }
 
     return (
-        <div className="w-96 space-y-4 bg-neutral-900 p-5 text-neutral-100">
-            <header>
-                <h1 className="text-base font-semibold">AdSkip</h1>
-                <p className="text-xs text-neutral-400">
-                    Detects sponsor reads in YouTube captions and skips them.
-                </p>
-            </header>
+        <div className="dark font-sans">
+            <div className="w-96 space-y-4 bg-background p-5 text-foreground">
+                <header className="flex items-center gap-2">
+                    <Megaphone className="size-5 text-foreground" />
+                    <div>
+                        <h1 className="text-base font-semibold leading-none">AdSkip</h1>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            Sponsor reads in YouTube captions.
+                        </p>
+                    </div>
+                </header>
 
-            <NextAdPanel
-                tab={tab}
-                tabError={tabError}
-                onRecheck={recheck}
-                recheckBusy={recheckBusy}
-            />
-
-            <label className="block space-y-1">
-                <span className="text-xs font-medium text-neutral-300">
-                    OpenRouter API key
-                </span>
-                <input
-                    type="password"
-                    value={s.apiKey}
-                    onChange={e => update('apiKey', e.target.value)}
-                    placeholder="sk-or-…"
-                    className="w-full rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm placeholder-neutral-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                <NextAdPanel
+                    tab={tab}
+                    tabError={tabError}
+                    onRecheck={recheck}
+                    recheckBusy={recheckBusy}
                 />
-            </label>
 
-            <label className="block space-y-1">
-                <span className="text-xs font-medium text-neutral-300">Model</span>
-                <input
-                    type="text"
-                    value={s.model}
-                    onChange={e => update('model', e.target.value)}
-                    className="w-full rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                />
-            </label>
+                <SkipHistory limit={3} />
 
-            <label className="flex items-center justify-between text-sm">
-                <span>Auto-skip detected ads</span>
-                <input
-                    type="checkbox"
-                    checked={s.autoSkip}
-                    onChange={e => update('autoSkip', e.target.checked)}
-                    className="h-4 w-4 accent-emerald-500"
-                />
-            </label>
+                <div className="space-y-1.5">
+                    <Label htmlFor="api-key" className="text-xs text-muted-foreground">
+                        OpenRouter API key
+                    </Label>
+                    <Input
+                        id="api-key"
+                        type="password"
+                        value={s.apiKey}
+                        onChange={e => update('apiKey', e.target.value)}
+                        placeholder="sk-or-…"
+                    />
+                </div>
 
-            <div className="flex items-center gap-2 pt-1">
-                <button
-                    type="button"
-                    onClick={test}
-                    disabled={busy || !s.apiKey}
-                    className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-40"
-                >
-                    Test connection
-                </button>
-                {status && <span className="text-xs text-neutral-300">{status}</span>}
+                <div className="space-y-1.5">
+                    <Label htmlFor="model" className="text-xs text-muted-foreground">
+                        Model
+                    </Label>
+                    <Input
+                        id="model"
+                        type="text"
+                        value={s.model}
+                        onChange={e => update('model', e.target.value)}
+                    />
+                </div>
+
+                <div className="flex items-center justify-between">
+                    <Label htmlFor="auto-skip">Auto-skip detected ads</Label>
+                    <Checkbox
+                        id="auto-skip"
+                        checked={s.autoSkip}
+                        onCheckedChange={v => update('autoSkip', v === true)}
+                    />
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                    <Button
+                        type="button"
+                        onClick={test}
+                        disabled={busy || !s.apiKey}
+                        size="sm"
+                    >
+                        {busy && <Spinner className="size-3.5 text-primary-foreground" />}
+                        Test connection
+                    </Button>
+                    {status && (
+                        <span
+                            className={
+                                status.kind === 'err'
+                                    ? 'flex items-center gap-1 text-xs text-destructive'
+                                    : 'flex items-center gap-1 text-xs text-muted-foreground'
+                            }
+                        >
+                            {status.kind === 'ok' && <Check className="size-3" />}
+                            {status.kind === 'err' && <X className="size-3" />}
+                            {status.kind === 'info' && <Spinner className="size-3" />}
+                            {status.text}
+                        </span>
+                    )}
+                </div>
             </div>
         </div>
     )
@@ -186,9 +228,11 @@ interface NextAdPanelProps {
 function NextAdPanel({ tab, tabError, onRecheck, recheckBusy }: NextAdPanelProps) {
     if (tabError) {
         return (
-            <div className="rounded-md border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-400">
-                {tabError}
-            </div>
+            <Card>
+                <CardContent className="text-xs text-muted-foreground">
+                    {tabError}
+                </CardContent>
+            </Card>
         )
     }
     if (!tab) return null
@@ -197,48 +241,67 @@ function NextAdPanel({ tab, tabError, onRecheck, recheckBusy }: NextAdPanelProps
     const canRecheck = tab.captionStatus === 'captured' && !recheckBusy
 
     return (
-        <div className="space-y-2 rounded-md border border-neutral-800 bg-neutral-950 p-3">
-            <div className="flex items-center justify-between text-xs text-neutral-400">
-                <span>{tab.videoId ? `Video: ${tab.videoId}` : 'Not on a video'}</span>
-                {tab.analyzing && <span className="text-amber-400">Analyzing…</span>}
-            </div>
+        <Card>
+            <CardContent className="space-y-2">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span className="truncate">
+                        {tab.videoId ? `Video: ${tab.videoId}` : 'Not on a video'}
+                    </span>
+                    {tab.analyzing && (
+                        <span className="flex items-center gap-1 text-foreground">
+                            <Spinner className="size-3 text-foreground" />
+                            Analyzing
+                        </span>
+                    )}
+                </div>
 
-            {next ? (
-                <NextAdRow segment={next} currentTimeMs={tab.currentTimeMs} />
-            ) : tab.segments.length > 0 ? (
-                <p className="text-xs text-emerald-400">
-                    All {tab.segments.length} detected ad{tab.segments.length > 1 ? 's' : ''} are
-                    behind you.
-                </p>
-            ) : tab.analyzing ? (
-                <p className="text-xs text-neutral-400">Waiting for results…</p>
-            ) : tab.captionStatus === 'captured' ? (
-                <p className="text-xs text-neutral-400">No ads detected in this video.</p>
-            ) : tab.captionStatus === 'unavailable' ? (
-                <p className="text-xs text-rose-400">
-                    This video has no captions. Ad detection isn't possible.
-                </p>
-            ) : tab.captionStatus === 'fetch-failed' ? (
-                <p className="text-xs text-rose-400">
-                    Couldn't fetch the caption track. Try Recheck after a few seconds.
-                </p>
-            ) : tab.captionStatus === 'fetching' ? (
-                <p className="text-xs text-neutral-400">Fetching captions from YouTube…</p>
-            ) : (
-                <p className="text-xs text-neutral-400">
-                    Waiting for YouTube to load captions…
-                </p>
-            )}
+                {next ? (
+                    <NextAdRow segment={next} currentTimeMs={tab.currentTimeMs} />
+                ) : tab.segments.length > 0 ? (
+                    <p className="text-xs text-foreground">
+                        All {tab.segments.length} detected ad{tab.segments.length > 1 ? 's' : ''}{' '}
+                        are behind you.
+                    </p>
+                ) : tab.analyzing ? (
+                    <p className="text-xs text-muted-foreground">Waiting for results…</p>
+                ) : tab.captionStatus === 'captured' ? (
+                    <p className="text-xs text-muted-foreground">
+                        No ads detected in this video.
+                    </p>
+                ) : tab.captionStatus === 'unavailable' ? (
+                    <p className="text-xs text-destructive">
+                        This video has no captions. Ad detection isn't possible.
+                    </p>
+                ) : tab.captionStatus === 'fetch-failed' ? (
+                    <p className="text-xs text-destructive">
+                        Couldn't fetch the caption track. Try Recheck after a few seconds.
+                    </p>
+                ) : tab.captionStatus === 'fetching' ? (
+                    <p className="text-xs text-muted-foreground">
+                        Fetching captions from YouTube…
+                    </p>
+                ) : (
+                    <p className="text-xs text-muted-foreground">
+                        Waiting for YouTube to load captions…
+                    </p>
+                )}
 
-            <button
-                type="button"
-                onClick={onRecheck}
-                disabled={!canRecheck}
-                className="w-full rounded-md bg-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-100 hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-                {recheckBusy ? 'Rechecking…' : 'Recheck this video'}
-            </button>
-        </div>
+                <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={onRecheck}
+                    disabled={!canRecheck}
+                    className="w-full"
+                >
+                    {recheckBusy ? (
+                        <Spinner className="size-3.5" />
+                    ) : (
+                        <RotateCw className="size-3.5" />
+                    )}
+                    {recheckBusy ? 'Rechecking…' : 'Recheck this video'}
+                </Button>
+            </CardContent>
+        </Card>
     )
 }
 
@@ -250,17 +313,16 @@ function NextAdRow({
     currentTimeMs: number
 }) {
     const inAd = currentTimeMs >= segment.startMs && currentTimeMs < segment.endMs
+    const duration = formatDurationCompact(segment.endMs - segment.startMs)
     return (
         <div className="space-y-1">
             <div className="flex items-center justify-between text-xs">
-                <span className="font-medium text-neutral-200">
-                    {inAd ? 'Current ad' : 'Next ad'}
-                </span>
-                <span className="font-mono text-neutral-400">
-                    {fmt(segment.startMs)}–{fmt(segment.endMs)}
-                </span>
+                <Badge variant={inAd ? 'destructive' : 'secondary'}>
+                    {inAd ? 'Current' : 'Next'}
+                </Badge>
+                <span className="font-mono text-muted-foreground">{duration}</span>
             </div>
-            <p className="text-xs leading-snug text-neutral-300">{segment.summary}</p>
+            <p className="text-xs leading-snug text-muted-foreground">{segment.summary}</p>
         </div>
     )
 }
@@ -278,13 +340,6 @@ function pickNextAd(segments: AdSegment[], tMs: number): AdSegment | null {
         }
     }
     return inAd ?? upcoming
-}
-
-function fmt(ms: number) {
-    const s = Math.floor(ms / 1000)
-    const m = Math.floor(s / 60)
-    const r = s % 60
-    return `${m}:${r.toString().padStart(2, '0')}`
 }
 
 export default Popup
