@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Check, X, RotateCw, Megaphone } from 'lucide-react'
+import { Activity, Check, X, RotateCw, Megaphone, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Spinner } from '@/components/ui/spinner'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { formatDurationCompact } from '@/lib/utils'
 import { DEFAULTS, getSettings, setSettings } from '@/utils/storage'
 import type {
@@ -145,74 +146,100 @@ const Popup = () => {
                     </div>
                 </header>
 
-                <NextAdPanel
-                    tab={tab}
-                    tabError={tabError}
-                    onRecheck={recheck}
-                    recheckBusy={recheckBusy}
-                />
+                <Tabs defaultValue="activity">
+                    <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="activity">
+                            <Activity className="size-3.5" />
+                            Activity
+                        </TabsTrigger>
+                        <TabsTrigger value="settings">
+                            <Settings className="size-3.5" />
+                            Settings
+                        </TabsTrigger>
+                    </TabsList>
 
-                <StatsPanel />
+                    <TabsContent value="activity" className="space-y-3">
+                        <NextAdPanel
+                            tab={tab}
+                            tabError={tabError}
+                            onRecheck={recheck}
+                            recheckBusy={recheckBusy}
+                        />
+                        <StatsPanel />
+                    </TabsContent>
 
-                <div className="space-y-1.5">
-                    <Label htmlFor="api-key" className="text-xs text-muted-foreground">
-                        OpenRouter API key
-                    </Label>
-                    <Input
-                        id="api-key"
-                        type="password"
-                        value={s.apiKey}
-                        onChange={e => update('apiKey', e.target.value)}
-                        placeholder="sk-or-…"
-                    />
-                </div>
+                    <TabsContent value="settings" className="space-y-4">
+                        <div className="space-y-1.5">
+                            <Label
+                                htmlFor="api-key"
+                                className="text-xs text-muted-foreground"
+                            >
+                                OpenRouter API key
+                            </Label>
+                            <Input
+                                id="api-key"
+                                type="password"
+                                value={s.apiKey}
+                                onChange={e => update('apiKey', e.target.value)}
+                                placeholder="sk-or-…"
+                            />
+                        </div>
 
-                <div className="space-y-1.5">
-                    <Label htmlFor="model" className="text-xs text-muted-foreground">
-                        Model
-                    </Label>
-                    <Input
-                        id="model"
-                        type="text"
-                        value={s.model}
-                        onChange={e => update('model', e.target.value)}
-                    />
-                </div>
+                        <div className="space-y-1.5">
+                            <Label
+                                htmlFor="model"
+                                className="text-xs text-muted-foreground"
+                            >
+                                Model
+                            </Label>
+                            <Input
+                                id="model"
+                                type="text"
+                                value={s.model}
+                                onChange={e => update('model', e.target.value)}
+                            />
+                        </div>
 
-                <div className="flex items-center justify-between">
-                    <Label htmlFor="auto-skip">Auto-skip detected ads</Label>
-                    <Checkbox
-                        id="auto-skip"
-                        checked={s.autoSkip}
-                        onCheckedChange={v => update('autoSkip', v === true)}
-                    />
-                </div>
+                        <div className="flex items-center justify-between">
+                            <Label htmlFor="auto-skip">Auto-skip detected ads</Label>
+                            <Checkbox
+                                id="auto-skip"
+                                checked={s.autoSkip}
+                                onCheckedChange={v => update('autoSkip', v === true)}
+                            />
+                        </div>
 
-                <div className="flex items-center gap-2 pt-1">
-                    <Button
-                        type="button"
-                        onClick={test}
-                        disabled={busy || !s.apiKey}
-                        size="sm"
-                    >
-                        {busy && <Spinner className="size-3.5 text-primary-foreground" />}
-                        Test connection
-                    </Button>
-                    {status && (
-                        <span
-                            className={
-                                status.kind === 'err'
-                                    ? 'flex items-center gap-1 text-xs text-destructive'
-                                    : 'flex items-center gap-1 text-xs text-muted-foreground'
-                            }
-                        >
-                            {status.kind === 'ok' && <Check className="size-3" />}
-                            {status.kind === 'err' && <X className="size-3" />}
-                            {status.kind === 'info' && <Spinner className="size-3" />}
-                            {status.text}
-                        </span>
-                    )}
-                </div>
+                        <div className="flex items-center gap-2 pt-1">
+                            <Button
+                                type="button"
+                                onClick={test}
+                                disabled={busy || !s.apiKey}
+                                size="sm"
+                            >
+                                {busy && (
+                                    <Spinner className="size-3.5 text-primary-foreground" />
+                                )}
+                                Test connection
+                            </Button>
+                            {status && (
+                                <span
+                                    className={
+                                        status.kind === 'err'
+                                            ? 'flex items-center gap-1 text-xs text-destructive'
+                                            : 'flex items-center gap-1 text-xs text-muted-foreground'
+                                    }
+                                >
+                                    {status.kind === 'ok' && <Check className="size-3" />}
+                                    {status.kind === 'err' && <X className="size-3" />}
+                                    {status.kind === 'info' && (
+                                        <Spinner className="size-3" />
+                                    )}
+                                    {status.text}
+                                </span>
+                            )}
+                        </div>
+                    </TabsContent>
+                </Tabs>
             </div>
         </div>
     )
