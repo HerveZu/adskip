@@ -146,13 +146,13 @@
         if (handledVideos.has(videoId)) return
         handledVideos.add(videoId)
 
-        // Give YouTube a moment to fetch captions itself if CC is already on.
-        await new Promise(r => setTimeout(r, 1500))
-        if (interceptedVideos.has(videoId)) return
-
         postStatus(videoId, 'fetching')
 
-        const btn = await waitForCcButton(10000)
+        // Give YouTube a moment to fetch captions itself if CC is already on.
+        await new Promise(r => setTimeout(r, 1000))
+        if (interceptedVideos.has(videoId)) return
+
+        const btn = await waitForCcButton(5000)
         if (!btn) {
             postStatus(videoId, 'unavailable')
             return
@@ -163,7 +163,7 @@
         // Toggle CC on only if it was off — never disrupt a user who already has it on.
         if (!wasPressed) btn.click()
 
-        const ok = await waitForIntercept(videoId, 5000)
+        const ok = await waitForIntercept(videoId, 4000)
 
         // Restore original state if we changed it.
         if (!wasPressed && btn.getAttribute('aria-pressed') === 'true') {

@@ -53,9 +53,29 @@ function refreshVideoId() {
     if (next !== currentVideoId) {
         currentVideoId = next
         window.dispatchEvent(new CustomEvent('adskip:videochange'))
+        if (next) scheduleStuckCheck(next)
     }
 }
+
+// Safety net: if no status arrives within ~7s for a new videoId, ask the
+// MAIN-world inject to force a CC-toggle fetch. Covers the case where
+// inject.ts loaded but ensureCaptions ran before the player was ready, or
+// the tab was open before the extension was installed/reloaded.
+function scheduleStuckCheck(videoId: string) {
+    setTimeout(() => {
+        if (videoId !== currentVideoId) return
+        if (captionsByVideo.has(videoId)) return
+        const s = captionStatusByVideo.get(videoId)
+        if (s && s !== 'pending') return
+        window.postMessage(
+            { source: 'adskip-content', type: 'force-fetch', videoId },
+            location.origin
+        )
+    }, 7000)
+}
+
 refreshVideoId()
+if (currentVideoId) scheduleStuckCheck(currentVideoId)
 window.addEventListener('yt-navigate-finish', refreshVideoId)
 window.addEventListener('popstate', refreshVideoId)
 
