@@ -119,9 +119,21 @@ chrome.runtime.onMessage.addListener(
         }
         if (msg.type === 'RECHECK') {
             const videoId = readVideoId()
-            const payload = videoId ? captionsByVideo.get(videoId) : undefined
-            if (!videoId || !payload) {
-                sendResponse({ ok: false, error: 'No captions captured for this video yet' })
+            if (!videoId) {
+                sendResponse({ ok: false, error: 'Not on a YouTube video' })
+                return
+            }
+            const payload = captionsByVideo.get(videoId)
+            if (!payload) {
+                // No captions captured yet — re-trigger the inject's CC-toggle
+                // flow so the user isn't stuck on "Waiting for captions…".
+                captionStatusByVideo.delete(videoId)
+                window.dispatchEvent(new CustomEvent('adskip:status'))
+                window.postMessage(
+                    { source: 'adskip-content', type: 'force-fetch', videoId },
+                    location.origin
+                )
+                sendResponse({ ok: true })
                 return
             }
             analyzingVideos.add(videoId)

@@ -179,6 +179,20 @@
         ensureCaptions(id)
     }
 
+    // Allow the isolated content script to force a fresh ensureCaptions
+    // (e.g. when the popup's Recheck button is hit while still pending).
+    window.addEventListener('message', (e: MessageEvent) => {
+        if (e.source !== window) return
+        const data = e.data as { source?: string; type?: string; videoId?: string }
+        if (!data || data.source !== 'adskip-content') return
+        if (data.type === 'force-fetch') {
+            const id = data.videoId || readVideoId()
+            if (!id) return
+            handledVideos.delete(id)
+            ensureCaptions(id)
+        }
+    })
+
     window.addEventListener('yt-navigate-finish', () => setTimeout(maybeRun, 500))
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', maybeRun, { once: true })

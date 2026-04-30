@@ -13,6 +13,7 @@ import type {
     AdSegment,
     ExtSettings,
     RuntimeMessage,
+    SkippedRecord,
     TabState,
 } from '@/content-scripts/youtube/types'
 
@@ -151,6 +152,8 @@ const Popup = () => {
                     recheckBusy={recheckBusy}
                 />
 
+                <StatsPanel />
+
                 <div className="space-y-1.5">
                     <Label htmlFor="api-key" className="text-xs text-muted-foreground">
                         OpenRouter API key
@@ -235,7 +238,7 @@ function NextAdPanel({ tab, tabError, onRecheck, recheckBusy }: NextAdPanelProps
     if (!tab) return null
 
     const next = pickNextAd(tab.segments, tab.currentTimeMs)
-    const canRecheck = tab.captionStatus === 'captured' && !recheckBusy
+    const canRecheck = !recheckBusy
 
     return (
         <Card>
@@ -321,6 +324,56 @@ function NextAdRow({
             </div>
             <p className="text-xs leading-snug text-muted-foreground">{segment.summary}</p>
         </div>
+    )
+}
+
+function StatsPanel() {
+    const [stats, setStats] = useState<{ time: number; count: number } | null>(null)
+
+    useEffect(() => {
+        const compute = (list: SkippedRecord[]) => ({
+            time: list.reduce((s, r) => s + r.durationMs, 0),
+            count: list.length,
+        })
+        const load = async () => {
+            const r = (await chrome.runtime.sendMessage({
+                type: 'GET_SKIP_HISTORY',
+            } as RuntimeMessage)) as { history: SkippedRecord[] }
+            setStats(compute(r.history ?? []))
+        }
+        load()
+        const onChanged = (changes: Record<string, chrome.storage.StorageChange>) => {
+            if (changes.skipHistory) {
+                setStats(compute((changes.skipHistory.newValue as SkippedRecord[]) ?? []))
+            }
+        }
+        chrome.storage.local.onChanged.addListener(onChanged)
+        return () => chrome.storage.local.onChanged.removeListener(onChanged)
+    }, [])
+
+    if (!stats || stats.count === 0) return null
+
+    return (
+        <Card>
+            <CardContent className="flex items-center justify-between">
+                <div>
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                        Time saved
+                    </div>
+                    <div className="text-lg font-semibold tabular-nums">
+                        {formatDurationCompact(stats.time)}
+                    </div>
+                </div>
+                <div className="text-right">
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                        Skipped
+                    </div>
+                    <div className="text-lg font-semibold tabular-nums">
+                        {stats.count}
+                    </div>
+                </div>
+            </CardContent>
+        </Card>
     )
 }
 
