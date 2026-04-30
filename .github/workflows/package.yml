@@ -1,8 +1,6 @@
 name: Package extension
 
 on:
-    push:
-        tags: ['v*']
     workflow_dispatch:
 
 jobs:
@@ -37,13 +35,9 @@ jobs:
             - name: Zip dist
               id: pack
               run: |
-                  if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-                      ZIP_NAME="adskip-${GITHUB_REF_NAME}.zip"
-                  else
-                      VERSION=$(node -p "require('./package.json').version")
-                      SHORT_SHA=$(git rev-parse --short HEAD)
-                      ZIP_NAME="adskip-${VERSION}-${SHORT_SHA}.zip"
-                  fi
+                  VERSION=$(node -p "require('./package.json').version")
+                  SHORT_SHA=$(git rev-parse --short HEAD)
+                  ZIP_NAME="adskip-${VERSION}-${SHORT_SHA}.zip"
                   cd dist && zip -r "../${ZIP_NAME}" .
                   echo "zip=${ZIP_NAME}" >> "$GITHUB_OUTPUT"
 
