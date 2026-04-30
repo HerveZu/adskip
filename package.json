@@ -1,0 +1,31 @@
+{
+    "name": "adskip",
+    "private": true,
+    "description": "Detect and skip in-video sponsor reads on YouTube using captions + an LLM",
+    "version": "0.1.0",
+    "type": "module",
+    "scripts": {
+        "dev": "concurrently \"vite build --watch\" \"node scripts/content-scripts.mjs --watch\" \"vite build --watch --config vite.config.inject.ts\"",
+        "build": "tsc -b && vite build && vite build --config vite.config.inject.ts && node scripts/content-scripts.mjs",
+        "format": "prettier --write \"./src/**/*.{ts,tsx}\""
+    },
+    "license": "ISC",
+    "devDependencies": {
+        "@types/chrome": "^0.0.287",
+        "@types/node": "^22.13.0",
+        "@types/react": "^19.0.0",
+        "@types/react-dom": "^19.0.0",
+        "@vitejs/plugin-react": "^4.3.0",
+        "concurrently": "^9.1.0",
+        "prettier": "^3.4.0",
+        "typescript": "^5.8.0",
+        "vite": "^6.2.0",
+        "vite-plugin-static-copy": "^2.2.0"
+    },
+    "dependencies": {
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0",
+        "tailwindcss": "^4.0.0",
+        "@tailwindcss/vite": "^4.0.0"
+    }
+}
