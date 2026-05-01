@@ -104,7 +104,7 @@ function createManifest(): Manifest {
         // Custom server URLs are granted at runtime via chrome.permissions.request
         // when the user clicks Test connection. Declared here so the API call
         // is allowed at all; not requested at install time.
-        optional_host_permissions: ['https://*/*', 'http://*/*'],
+        optional_host_permissions: ['<all_urls>'],
         content_scripts: discoverContentScripts(),
         web_accessible_resources: [
             {
