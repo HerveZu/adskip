@@ -26,6 +26,7 @@ export interface ExtSettings {
     baseUrl: string
     autoSkip: boolean
     prerollSeconds: number
+    skipAds: boolean
 }
 
 export interface SkippedRecord {
@@ -54,6 +55,10 @@ export type CaptionStatus =
     | 'captured'
     | 'unavailable'
     | 'fetch-failed'
+
+export interface AdSkippedPayload {
+    durationMs: number
+}
 
 export interface TabState {
     videoId: string | null

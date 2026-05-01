@@ -92,6 +92,7 @@ window.addEventListener('message', (e: MessageEvent) => {
         payload?: CaptionPayload
         videoId?: string
         status?: CaptionStatus
+        durationMs?: number
     }
     if (!data || data.source !== 'adskip') return
 
@@ -117,6 +118,12 @@ window.addEventListener('message', (e: MessageEvent) => {
             captionStatusByVideo.set(data.videoId, data.status)
             window.dispatchEvent(new CustomEvent('adskip:status'))
         }
+    }
+
+    if (data.type === 'ad-skipped' && typeof data.durationMs === 'number') {
+        window.dispatchEvent(
+            new CustomEvent('adskip:adskipped', { detail: { durationMs: data.durationMs } })
+        )
     }
 })
 
@@ -202,7 +209,7 @@ function App() {
     const [cancelled, setCancelled] = useState<Set<string>>(new Set())
     const [tMs, setTMs] = useState(0)
     const [video, setVideo] = useState<HTMLVideoElement | null>(null)
-    const [settings, setSettings] = useState({ autoSkip: true, prerollSeconds: 10 })
+    const [settings, setSettings] = useState({ autoSkip: true, prerollSeconds: 10, skipAds: true })
     const [captionStatus, setCaptionStatus] = useState<CaptionStatus>('pending')
     const [toastDismissed, setToastDismissed] = useState(false)
     const [lastSkipped, setLastSkipped] = useState<{
@@ -210,6 +217,9 @@ function App() {
         seconds: number
         at: number
     } | null>(null)
+    const [adSkippedAt, setAdSkippedAt] = useState<{ durationMs: number; at: number } | null>(
+        null
+    )
     const [playerRect, setPlayerRect] = useState<DOMRect | null>(getPlayerRect())
 
     useEffect(() => {
@@ -232,10 +242,11 @@ function App() {
     }, [])
 
     useEffect(() => {
-        chrome.storage.local.get(['autoSkip', 'prerollSeconds']).then(s => {
+        chrome.storage.local.get(['autoSkip', 'prerollSeconds', 'skipAds']).then(s => {
             setSettings({
                 autoSkip: s.autoSkip ?? true,
                 prerollSeconds: s.prerollSeconds ?? 10,
+                skipAds: s.skipAds ?? true,
             })
         })
         const onChanged = (changes: Record<string, chrome.storage.StorageChange>) => {
@@ -243,6 +254,7 @@ function App() {
                 autoSkip: changes.autoSkip?.newValue ?? prev.autoSkip,
                 prerollSeconds:
                     changes.prerollSeconds?.newValue ?? prev.prerollSeconds,
+                skipAds: changes.skipAds?.newValue ?? prev.skipAds,
             }))
         }
         chrome.storage.local.onChanged.addListener(onChanged)
@@ -255,6 +267,7 @@ function App() {
             setCancelled(new Set())
             setToastDismissed(false)
             setLastSkipped(null)
+            setAdSkippedAt(null)
         }
         window.addEventListener('adskip:videochange', onChange)
         return () => window.removeEventListener('adskip:videochange', onChange)
@@ -268,11 +281,29 @@ function App() {
     }, [videoId])
 
     useEffect(() => {
+        window.postMessage(
+            { source: 'adskip-content', type: 'skip-ads-setting', skipAds: settings.skipAds },
+            location.origin
+        )
+    }, [settings.skipAds])
+
+    useEffect(() => {
         const sync = () => setCaptionStatus(getCaptionStatus(videoId))
         sync()
         window.addEventListener('adskip:status', sync)
         return () => window.removeEventListener('adskip:status', sync)
     }, [videoId])
+
+    useEffect(() => {
+        const onAdSkipped = (e: Event) => {
+            const detail = (e as CustomEvent<{ durationMs: number }>).detail
+            if (detail?.durationMs) {
+                setAdSkippedAt({ durationMs: detail.durationMs, at: Date.now() })
+            }
+        }
+        window.addEventListener('adskip:adskipped', onAdSkipped)
+        return () => window.removeEventListener('adskip:adskipped', onAdSkipped)
+    }, [])
 
     useEffect(() => {
         if (!videoId) {
@@ -380,6 +411,14 @@ function App() {
                     onDone={() => setLastSkipped(null)}
                 />
             )}
+            {adSkippedAt && (
+                <AdSkippedToast
+                    key={adSkippedAt.at}
+                    durationMs={adSkippedAt.durationMs}
+                    playerRect={playerRect}
+                    onDone={() => setAdSkippedAt(null)}
+                />
+            )}
         </>
     )
 }
@@ -417,6 +456,33 @@ function SkippedToast({
             <AlertTitle>
                 Skipped {formatDurationCompact(seconds * 1000)} of sponsored content
             </AlertTitle>
+        </Alert>
+    )
+}
+
+function AdSkippedToast({
+    durationMs,
+    playerRect,
+    onDone,
+}: {
+    durationMs: number
+    playerRect: DOMRect | null
+    onDone: () => void
+}) {
+    useAutoDismiss(onDone, 5000)
+    return (
+        <Alert
+            className="shadow-lg"
+            style={{
+                position: 'fixed',
+                ...topRightOnPlayer(playerRect),
+                width: 'auto',
+                pointerEvents: 'auto',
+                zIndex: 2147483646,
+            }}
+        >
+            <Check />
+            <AlertTitle>Ad skipped ({formatDurationCompact(durationMs)})</AlertTitle>
         </Alert>
     )
 }

@@ -6,6 +6,7 @@ export const DEFAULTS: ExtSettings = {
     baseUrl: '',
     autoSkip: true,
     prerollSeconds: 10,
+    skipAds: true,
 }
 
 // Empty baseUrl means use OpenRouter. Any other OpenAI-compatible endpoint
