@@ -3,9 +3,15 @@ import type { ExtSettings, SkippedRecord } from '@/content-scripts/youtube/types
 export const DEFAULTS: ExtSettings = {
     apiKey: '',
     model: 'google/gemini-3-flash-preview',
+    baseUrl: '',
     autoSkip: true,
     prerollSeconds: 10,
 }
+
+// Empty baseUrl means use OpenRouter. Any other OpenAI-compatible endpoint
+// (api.openai.com, a self-hosted vLLM/Ollama, etc.) works if it speaks the
+// /chat/completions schema.
+export const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1'
 
 export async function getSettings(): Promise<ExtSettings> {
     const keys = Object.keys(DEFAULTS) as Array<keyof ExtSettings>

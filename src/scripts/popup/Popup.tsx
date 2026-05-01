@@ -174,7 +174,7 @@ const Popup = () => {
                                 htmlFor="api-key"
                                 className="text-xs text-muted-foreground"
                             >
-                                OpenRouter API key
+                                API key
                             </Label>
                             <Input
                                 id="api-key"
@@ -183,6 +183,26 @@ const Popup = () => {
                                 onChange={e => update('apiKey', e.target.value)}
                                 placeholder="sk-or-…"
                             />
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <Label
+                                htmlFor="base-url"
+                                className="text-xs text-muted-foreground"
+                            >
+                                Server URL (optional)
+                            </Label>
+                            <Input
+                                id="base-url"
+                                type="text"
+                                value={s.baseUrl}
+                                onChange={e => update('baseUrl', e.target.value)}
+                                placeholder="https://openrouter.ai/api/v1"
+                            />
+                            <span className="block text-xs text-muted-foreground">
+                                Any OpenAI-compatible /chat/completions endpoint.
+                                Leave blank for OpenRouter.
+                            </span>
                         </div>
 
                         <div className="space-y-1.5">

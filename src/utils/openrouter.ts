@@ -3,8 +3,32 @@ import type {
     CaptionEvent,
     CaptionPayload,
 } from '@/content-scripts/youtube/types'
+import { DEFAULT_BASE_URL } from '@/utils/storage'
 
-const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions'
+function chatEndpoint(baseUrl: string | undefined): string {
+    const base = (baseUrl?.trim() || DEFAULT_BASE_URL)
+        .replace(/\/+$/, '')
+        .replace(/\/chat\/completions$/, '')
+    return `${base}/chat/completions`
+}
+
+function isOpenRouter(baseUrl: string | undefined): boolean {
+    return !baseUrl?.trim() || /openrouter\.ai/i.test(baseUrl)
+}
+
+function authHeaders(opts: RouterCallOpts): Record<string, string> {
+    const h: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${opts.apiKey}`,
+    }
+    // OpenRouter-specific attribution headers — harmless elsewhere but skip
+    // them on custom servers to keep request shape minimal.
+    if (isOpenRouter(opts.baseUrl)) {
+        h['HTTP-Referer'] = chrome.runtime.getURL('')
+        h['X-Title'] = 'AdSkip'
+    }
+    return h
+}
 
 const SYSTEM_PROMPT = `You detect EXPLICIT third-party sponsor reads in YouTube transcripts.
 
@@ -33,6 +57,7 @@ Output ONLY the JSON object, no prose, no code fences.`
 interface RouterCallOpts {
     apiKey: string
     model: string
+    baseUrl?: string
     signal?: AbortSignal
 }
 
@@ -55,20 +80,15 @@ export async function analyzeCaptions(
         temperature: 0,
     }
 
-    const res = await fetch(ENDPOINT, {
+    const res = await fetch(chatEndpoint(opts.baseUrl), {
         method: 'POST',
         signal: opts.signal,
-        headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${opts.apiKey}`,
-            'HTTP-Referer': chrome.runtime.getURL(''),
-            'X-Title': 'AdSkip',
-        },
+        headers: authHeaders(opts),
         body: JSON.stringify(body),
     })
     if (!res.ok) {
         const txt = await res.text().catch(() => '')
-        throw new Error(`OpenRouter ${res.status}: ${txt.slice(0, 300)}`)
+        throw new Error(`LLM ${res.status}: ${txt.slice(0, 300)}`)
     }
     const json = (await res.json()) as {
         choices?: Array<{ message?: { content?: string } }>
@@ -83,15 +103,10 @@ export async function analyzeCaptions(
 }
 
 export async function pingOpenRouter(opts: RouterCallOpts): Promise<boolean> {
-    const res = await fetch(ENDPOINT, {
+    const res = await fetch(chatEndpoint(opts.baseUrl), {
         method: 'POST',
         signal: opts.signal,
-        headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${opts.apiKey}`,
-            'HTTP-Referer': chrome.runtime.getURL(''),
-            'X-Title': 'AdSkip',
-        },
+        headers: authHeaders(opts),
         body: JSON.stringify({
             model: opts.model,
             messages: [{ role: 'user', content: 'pong' }],
@@ -100,7 +115,7 @@ export async function pingOpenRouter(opts: RouterCallOpts): Promise<boolean> {
     })
     if (res.ok) return true
     const txt = await res.text().catch(() => '')
-    throw new Error(`OpenRouter ${res.status}: ${txt.slice(0, 300)}`)
+    throw new Error(`LLM ${res.status}: ${txt.slice(0, 300)}`)
 }
 
 function formatEvent(ev: CaptionEvent): string | null {

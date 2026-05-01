@@ -53,7 +53,7 @@ const Options = () => {
                 </header>
 
                 <div className="space-y-1.5">
-                    <Label htmlFor="opt-api-key">OpenRouter API key</Label>
+                    <Label htmlFor="opt-api-key">API key</Label>
                     <Input
                         id="opt-api-key"
                         type="password"
@@ -61,6 +61,21 @@ const Options = () => {
                         onChange={e => update('apiKey', e.target.value)}
                         placeholder="sk-or-…"
                     />
+                </div>
+
+                <div className="space-y-1.5">
+                    <Label htmlFor="opt-base-url">Server URL (optional)</Label>
+                    <Input
+                        id="opt-base-url"
+                        type="text"
+                        value={s.baseUrl}
+                        onChange={e => update('baseUrl', e.target.value)}
+                        placeholder="https://openrouter.ai/api/v1"
+                    />
+                    <span className="block text-xs text-muted-foreground">
+                        Any OpenAI-compatible /chat/completions endpoint.
+                        Leave blank for OpenRouter.
+                    </span>
                 </div>
 
                 <div className="space-y-1.5">

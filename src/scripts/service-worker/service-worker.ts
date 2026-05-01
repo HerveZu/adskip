@@ -36,7 +36,11 @@ chrome.runtime.onMessage.addListener((msg: RuntimeMessage, sender, sendResponse)
             try {
                 const settings = await getSettings()
                 if (!settings.apiKey) throw new Error('No API key set')
-                await pingOpenRouter({ apiKey: settings.apiKey, model: settings.model })
+                await pingOpenRouter({
+                    apiKey: settings.apiKey,
+                    model: settings.model,
+                    baseUrl: settings.baseUrl,
+                })
                 sendResponse({ ok: true })
             } catch (err) {
                 sendResponse({ ok: false, error: String((err as Error)?.message ?? err) })
@@ -104,6 +108,7 @@ async function handleAnalyze(
     const promise = analyzeCaptions(payload, {
         apiKey: settings.apiKey,
         model: settings.model,
+        baseUrl: settings.baseUrl,
     })
     inflight.set(videoId, promise)
     try {

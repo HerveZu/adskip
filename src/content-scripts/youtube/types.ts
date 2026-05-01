@@ -23,6 +23,7 @@ export interface AdSegment {
 export interface ExtSettings {
     apiKey: string
     model: string
+    baseUrl: string
     autoSkip: boolean
     prerollSeconds: number
 }
