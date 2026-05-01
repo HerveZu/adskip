@@ -6,7 +6,7 @@
     "type": "module",
     "scripts": {
         "dev": "concurrently \"vite build --watch\" \"node scripts/content-scripts.mjs --watch\" \"vite build --watch --config vite.config.inject.ts\"",
-        "build": "tsc -b && vite build && vite build --config vite.config.inject.ts && node scripts/content-scripts.mjs",
+        "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -b && vite build && vite build --config vite.config.inject.ts && node scripts/content-scripts.mjs",
         "typecheck": "tsc -b",
         "lint": "eslint .",
         "format": "prettier --write \"./src/**/*.{ts,tsx}\""

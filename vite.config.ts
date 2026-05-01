@@ -30,6 +30,10 @@ export default defineConfig({
     },
     base: '',
     build: {
+        // Other configs (inject, content scripts) write into dist/js alongside
+        // this one. If this config emptied dist/ on rebuild, watch mode would
+        // race-delete their output. The build script wipes dist/ once up front.
+        emptyOutDir: false,
         rollupOptions: {
             input: rollupInput,
             output: {
