@@ -231,9 +231,6 @@ const Popup = () => {
                                 >
                                     {status.kind === 'ok' && <Check className="size-3" />}
                                     {status.kind === 'err' && <X className="size-3" />}
-                                    {status.kind === 'info' && (
-                                        <Spinner className="size-3" />
-                                    )}
                                     {status.text}
                                 </span>
                             )}
