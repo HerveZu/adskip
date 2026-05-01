@@ -12,6 +12,7 @@
 
     const interceptedVideos = new Set<string>()
     const handledVideos = new Set<string>()
+    const inFlight = new Set<string>()
 
     function postCaptions(url: string, payload: unknown) {
         try {
@@ -142,35 +143,67 @@
         return false
     }
 
+    function isAdPlaying(): boolean {
+        const player = document.querySelector<HTMLElement>('#movie_player')
+        if (!player) return false
+        return (
+            player.classList.contains('ad-showing') ||
+            player.classList.contains('ad-interrupting')
+        )
+    }
+
+    // YouTube serves pre-roll ads before the main video; while one is on
+    // screen the timedtext API hasn't been hit for the real video yet, so
+    // toggling CC fires into the ad player and waitForIntercept times out.
+    // Block the flow until the ad ends — or until the timeout, in case the
+    // class never clears (e.g. ad blocker masks the state).
+    async function waitForNoAd(timeoutMs: number): Promise<void> {
+        const start = Date.now()
+        while (Date.now() - start < timeoutMs) {
+            if (!isAdPlaying()) return
+            await new Promise(r => setTimeout(r, 250))
+        }
+    }
+
     async function ensureCaptions(videoId: string): Promise<void> {
-        if (handledVideos.has(videoId)) return
+        if (handledVideos.has(videoId) || inFlight.has(videoId)) return
+        inFlight.add(videoId)
         handledVideos.add(videoId)
 
-        postStatus(videoId, 'fetching')
+        try {
+            postStatus(videoId, 'fetching')
 
-        // Give YouTube a moment to fetch captions itself if CC is already on.
-        await new Promise(r => setTimeout(r, 1000))
-        if (interceptedVideos.has(videoId)) return
+            // Wait out any pre-roll ad before touching the CC button.
+            await waitForNoAd(180_000)
+            if (videoId !== readVideoId()) return
+            if (interceptedVideos.has(videoId)) return
 
-        const btn = await waitForCcButton(5000)
-        if (!btn) {
-            postStatus(videoId, 'unavailable')
-            return
+            // Give YouTube a moment to fetch captions itself if CC is already on.
+            await new Promise(r => setTimeout(r, 1000))
+            if (interceptedVideos.has(videoId)) return
+
+            const btn = await waitForCcButton(5000)
+            if (!btn) {
+                postStatus(videoId, 'unavailable')
+                return
+            }
+
+            const wasPressed = btn.getAttribute('aria-pressed') === 'true'
+
+            // Toggle CC on only if it was off — never disrupt a user who already has it on.
+            if (!wasPressed) btn.click()
+
+            const ok = await waitForIntercept(videoId, 4000)
+
+            // Restore original state if we changed it.
+            if (!wasPressed && btn.getAttribute('aria-pressed') === 'true') {
+                btn.click()
+            }
+
+            if (!ok) postStatus(videoId, 'fetch-failed')
+        } finally {
+            inFlight.delete(videoId)
         }
-
-        const wasPressed = btn.getAttribute('aria-pressed') === 'true'
-
-        // Toggle CC on only if it was off — never disrupt a user who already has it on.
-        if (!wasPressed) btn.click()
-
-        const ok = await waitForIntercept(videoId, 4000)
-
-        // Restore original state if we changed it.
-        if (!wasPressed && btn.getAttribute('aria-pressed') === 'true') {
-            btn.click()
-        }
-
-        if (!ok) postStatus(videoId, 'fetch-failed')
     }
 
     function maybeRun() {
