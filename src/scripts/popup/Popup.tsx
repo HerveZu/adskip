@@ -10,6 +10,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { formatDurationCompact } from '@/lib/utils'
 import { DEFAULTS, getSettings, setSettings } from '@/utils/storage'
+import { ensureHostPermission } from '@/utils/permissions'
 import type {
     AdSegment,
     ExtSettings,
@@ -87,13 +88,18 @@ const Popup = () => {
         setBusy(true)
         setStatus({ text: 'Testing…', kind: 'info' })
         try {
+            const granted = await ensureHostPermission(s.baseUrl)
+            if (!granted) {
+                setStatus({ text: 'Host permission denied', kind: 'err' })
+                return
+            }
             const r = (await chrome.runtime.sendMessage({ type: 'PING_OPENROUTER' })) as {
                 ok: boolean
                 error?: string
             }
             setStatus(
                 r.ok
-                    ? { text: 'OpenRouter reachable', kind: 'ok' }
+                    ? { text: 'Endpoint reachable', kind: 'ok' }
                     : { text: r.error ?? 'failed', kind: 'err' }
             )
         } catch (e) {

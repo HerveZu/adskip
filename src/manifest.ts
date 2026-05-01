@@ -18,6 +18,7 @@ interface Manifest {
     icons: Record<string, string>
     permissions: string[]
     host_permissions?: string[]
+    optional_host_permissions?: string[]
     content_scripts: Array<{
         matches: string[]
         js: string[]
@@ -100,6 +101,10 @@ function createManifest(): Manifest {
             'https://www.youtube.com/*',
             'https://openrouter.ai/*',
         ],
+        // Custom server URLs are granted at runtime via chrome.permissions.request
+        // when the user clicks Test connection. Declared here so the API call
+        // is allowed at all; not requested at install time.
+        optional_host_permissions: ['https://*/*', 'http://*/*'],
         content_scripts: discoverContentScripts(),
         web_accessible_resources: [
             {
