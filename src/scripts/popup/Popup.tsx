@@ -235,6 +235,15 @@ const Popup = () => {
                             />
                         </div>
 
+                        <div className="flex items-center justify-between">
+                            <Label htmlFor="skip-ads">Skip YouTube ads</Label>
+                            <Checkbox
+                                id="skip-ads"
+                                checked={s.skipAds}
+                                onCheckedChange={v => update('skipAds', v === true)}
+                            />
+                        </div>
+
                         <div className="flex items-center gap-2 pt-1">
                             <Button
                                 type="button"

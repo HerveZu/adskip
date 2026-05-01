@@ -115,6 +115,21 @@ const Options = () => {
                     />
                 </div>
 
+                <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                        <Label htmlFor="opt-skip-ads">Skip YouTube ads</Label>
+                        <Checkbox
+                            id="opt-skip-ads"
+                            checked={s.skipAds}
+                            onCheckedChange={v => update('skipAds', v === true)}
+                        />
+                    </div>
+                    <span className="block text-xs text-muted-foreground">
+                        Automatically speed through and skip pre-roll &amp; mid-roll
+                        YouTube advertisements.
+                    </span>
+                </div>
+
                 <div className="flex items-center gap-3 pt-2">
                     <Button variant="secondary" onClick={clearCache}>
                         <Trash2 className="size-4" />

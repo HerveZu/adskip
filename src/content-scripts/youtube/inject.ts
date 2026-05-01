@@ -226,6 +226,126 @@
         }
     })
 
+    let adSkipEnabled = true
+    let adSkipObserver: MutationObserver | null = null
+    let adSkipInterval: ReturnType<typeof setInterval> | null = null
+    let wasMutedByAdskip = false
+    let savedPlaybackRate = 1
+    let adStartTimeMs: number | null = null
+
+    function postAdSkipped(durationMs: number) {
+        try {
+            window.postMessage(
+                { source: 'adskip', type: 'ad-skipped', durationMs },
+                window.location.origin
+            )
+        } catch {
+            /* noop */
+        }
+    }
+
+    function findSkipButton(): HTMLButtonElement | null {
+        return document.querySelector<HTMLButtonElement>(
+            '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-ad-skip-button-slot button'
+        )
+    }
+
+    function getVideoEl(): HTMLVideoElement | null {
+        return document.querySelector<HTMLVideoElement>('video.html5-main-video, video')
+    }
+
+    function handleAdState() {
+        if (!adSkipEnabled) return
+        const player = document.querySelector<HTMLElement>('#movie_player')
+        if (!player) return
+        const adActive =
+            player.classList.contains('ad-showing') ||
+            player.classList.contains('ad-interrupting')
+
+        if (adActive) {
+            const video = getVideoEl()
+            if (video) {
+                if (!adStartTimeMs) {
+                    adStartTimeMs = Date.now()
+                    savedPlaybackRate = video.playbackRate
+                    wasMutedByAdskip = video.muted === false
+                    video.muted = true
+                }
+                if (video.playbackRate < 16) {
+                    video.playbackRate = 16
+                }
+            }
+            const btn = findSkipButton()
+            if (btn) btn.click()
+        } else if (adStartTimeMs !== null) {
+            const video = getVideoEl()
+            if (video) {
+                video.playbackRate = savedPlaybackRate
+                if (wasMutedByAdskip) video.muted = false
+            }
+            const durationMs = Date.now() - adStartTimeMs
+            adStartTimeMs = null
+            wasMutedByAdskip = false
+            postAdSkipped(durationMs)
+        }
+    }
+
+    function startAdSkipObserver() {
+        if (adSkipObserver) return
+        const player = document.querySelector<HTMLElement>('#movie_player')
+        if (!player) {
+            setTimeout(startAdSkipObserver, 2000)
+            return
+        }
+        adSkipObserver = new MutationObserver(() => handleAdState())
+        adSkipObserver.observe(player, { attributes: true, attributeFilter: ['class'] })
+        adSkipInterval = setInterval(() => {
+            if (adSkipEnabled) handleAdState()
+        }, 500)
+    }
+
+    function stopAdSkipObserver() {
+        if (adSkipObserver) {
+            adSkipObserver.disconnect()
+            adSkipObserver = null
+        }
+        if (adSkipInterval) {
+            clearInterval(adSkipInterval)
+            adSkipInterval = null
+        }
+        if (adStartTimeMs !== null) {
+            const video = getVideoEl()
+            if (video) {
+                video.playbackRate = savedPlaybackRate
+                if (wasMutedByAdskip) video.muted = false
+            }
+            adStartTimeMs = null
+            wasMutedByAdskip = false
+        }
+    }
+
+    window.addEventListener('message', (e: MessageEvent) => {
+        if (e.source !== window) return
+        const data = e.data as { source?: string; type?: string; skipAds?: boolean }
+        if (!data || data.source !== 'adskip-content') return
+        if (data.type === 'skip-ads-setting') {
+            adSkipEnabled = data.skipAds ?? true
+            if (adSkipEnabled) {
+                startAdSkipObserver()
+            } else {
+                stopAdSkipObserver()
+            }
+        }
+    })
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => startAdSkipObserver(), {
+            once: true,
+        })
+    } else {
+        startAdSkipObserver()
+    }
+
     window.addEventListener('yt-navigate-finish', () => setTimeout(maybeRun, 500))
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', maybeRun, { once: true })
