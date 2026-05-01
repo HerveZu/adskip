@@ -1,4 +1,3 @@
-import { useEffect, useRef } from 'react'
 import { Megaphone } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -11,10 +10,8 @@ interface Props {
     autoSkip: boolean
     playerRect: DOMRect | null
     onCancel: () => void
-    onDismiss: () => void
+    onSkipNow: () => void
 }
-
-const AUTO_DISMISS_MS = 5_000
 
 export default function Overlay({
     segment,
@@ -22,17 +19,8 @@ export default function Overlay({
     autoSkip,
     playerRect,
     onCancel,
-    onDismiss,
+    onSkipNow,
 }: Props) {
-    const onDismissRef = useRef(onDismiss)
-    useEffect(() => {
-        onDismissRef.current = onDismiss
-    })
-    useEffect(() => {
-        const id = window.setTimeout(() => onDismissRef.current(), AUTO_DISMISS_MS)
-        return () => clearTimeout(id)
-    }, [])
-
     const top = playerRect ? Math.max(8, playerRect.top + 12) : 80
     const right = playerRect
         ? Math.max(8, window.innerWidth - playerRect.right + 12)
@@ -67,9 +55,13 @@ export default function Overlay({
                     <span className="font-mono text-xs text-muted-foreground">
                         {duration}
                     </span>
-                    {autoSkip && (
+                    {autoSkip ? (
                         <Button variant="secondary" size="sm" onClick={onCancel}>
                             Don't skip
+                        </Button>
+                    ) : (
+                        <Button variant="secondary" size="sm" onClick={onSkipNow}>
+                            Skip now
                         </Button>
                     )}
                 </div>
