@@ -1,25 +1,69 @@
-# React + Tailwind Chrome Extension Template
+# AdSkip
 
-> **Updated 2026** — Fully modernized with React 19, Tailwind CSS v4, Vite 6, TypeScript 5.9, and pnpm.
+A Chrome extension (MV3) that detects and skips in-video sponsor reads on YouTube. It pulls the video's captions, hands them to an LLM via OpenRouter, and uses the returned timestamps to either auto-skip the segment or surface a "Skip now" button on the player.
 
-A minimal, production-ready Chrome Extension (Manifest V3) template. Drop a folder, get a content script — zero config.
+## How it works
 
-## Stack
+The extension runs across three execution contexts that talk by message-passing.
 
-- **React 19** — latest with the `react-jsx` transform (no `import React` needed)
-- **Tailwind CSS v4** — CSS-first config via `@theme`, Vite plugin
-- **Vite 6** — fast builds, watch mode for dev
-- **TypeScript 5.9** — strict mode, bundler resolution
-- **pnpm** — fast, disk-efficient package manager
-- **Manifest V3** — auto-generated from `src/manifest.ts`
+```
+┌─────────────────────────┐         ┌──────────────────────────┐
+│ inject.ts (MAIN world)  │         │ index.tsx (ISOLATED)     │
+│ - patches fetch + XHR   │ window. │ - mounts overlay (shadow │
+│ - clicks CC if needed   │ postMsg │   DOM, anchored to       │
+│ - posts caption JSON    ├────────►│   #movie_player rect)    │
+│ - posts status updates  │         │ - watches video time     │
+└─────────────────────────┘         │ - performs the skip      │
+                                    └─────────────┬────────────┘
+                                                  │ chrome.runtime
+                                                  │  .sendMessage
+                                                  ▼
+                                    ┌──────────────────────────┐
+                                    │ service-worker.ts        │
+                                    │ - calls OpenRouter LLM   │
+                                    │ - caches segments        │
+                                    │   (storage.session)      │
+                                    │ - records skip history   │
+                                    └──────────────────────────┘
+```
+
+### 1. Caption capture (`src/content-scripts/youtube/inject.ts`)
+
+Injected into the page's MAIN world via `<script src>` at `document_start` so its `fetch`/`XMLHttpRequest` patches land before YouTube's player code runs. Whenever YouTube hits `/api/timedtext`, the patched fetch clones the response and posts the caption JSON back to the isolated content script.
+
+If the user has CC turned off, the script briefly clicks YouTube's own CC button to make the player request captions, then restores the original state. Two non-obvious cases are handled here:
+
+- **Pre-roll ads** delay the main video's `timedtext` call. Before touching the CC button, the script blocks on `#movie_player.ad-showing` / `.ad-interrupting` clearing — otherwise the toggle hits the ad player and the intercept times out.
+- **Re-entry** — the content script schedules force-fetch retries in case the natural flow stalls. An `inFlight` set in the inject prevents concurrent CC clicks if a retry fires while the first attempt is still waiting.
+
+### 2. Overlay + skip controller (`src/content-scripts/youtube/index.tsx`)
+
+The isolated-world content script renders a React tree inside a shadow root anchored to YouTube's `#movie_player`. It:
+
+- Forwards captured caption payloads to the service worker for analysis.
+- Listens for `AD_SEGMENTS` messages back from the service worker.
+- Watches `video.currentTime` and runs `computeSkipState` (`skipController.ts`) every tick to decide whether to show the warning, count down a preroll, and/or perform the skip.
+- Renders the `Overlay` with a "Don't skip" button (auto mode) or a "Skip now" button (manual mode).
+
+The skip itself is a `video.currentTime = seg.endMs / 1000` jump. After the skip a `SkippedToast` confirms how much was skipped and a `RECORD_SKIP` message logs it for the popup's stats panel.
+
+### 3. Analysis backend (`src/scripts/service-worker/service-worker.ts`)
+
+Holds the OpenRouter API key (from extension storage), accepts `ANALYZE_CAPTIONS` messages, and calls the configured model. Results are cached per-video in `chrome.storage.session` so revisiting a tab doesn't re-pay for analysis. Concurrent requests for the same video share a single in-flight promise. Returned `AdSegment[]` (id + start/end ms + summary) is broadcast back to the originating tab.
+
+### 4. Popup (`src/scripts/popup/Popup.tsx`)
+
+- **Activity** — polls the active YouTube tab once a second for state (next ad, caption status, "analyzing" flag) and renders the cumulative time-saved counter.
+- **Settings** — OpenRouter API key, model name, auto-skip toggle. A `PING_OPENROUTER` test verifies the key/model pair before you commit to it.
 
 ## Setup
 
 ```bash
 pnpm install
+pnpm build
 ```
 
-Edit `package.json` to set your extension's `name`, `description`, and `version`. These feed into the generated `manifest.json`. For more control, edit `src/manifest.ts`.
+Load `dist/` via `chrome://extensions` → Developer mode → **Load unpacked**. Open the popup, paste an OpenRouter API key, pick a model, then visit a YouTube video.
 
 ## Development
 
@@ -27,85 +71,9 @@ Edit `package.json` to set your extension's `name`, `description`, and `version`
 pnpm dev
 ```
 
-Runs both Vite configs in watch mode — the main build (popup, options, onInstalled, service worker) and the content script build. Changes rebuild automatically.
+Runs three Vite builds in watch mode (main, `inject.ts`, the `youtube` content script). After saving, click **Reload** on the extension card and refresh the YouTube tab — content scripts only re-attach on a fresh page load.
 
-## Building
-
-```bash
-pnpm build
-```
-
-Outputs to `dist/`. Load it in Chrome: `chrome://extensions` → Developer mode → **Load unpacked** → select the `dist` folder.
-
-## Project Structure
-
-```
-src/
-├── content-scripts/       # Auto-discovered content scripts
-│   └── main/              # Each folder = one content script
-│       ├── index.tsx       # Entry point (required)
-│       ├── App.tsx         # Your components
-│       └── config.json     # { "matches": ["<all_urls>"] }
-├── scripts/
-│   ├── onInstalled/       # Shown on first install
-│   ├── options/           # Extension options page
-│   ├── popup/             # Browser action popup
-│   └── service-worker/    # Background service worker
-├── styles/
-│   └── index.css          # Tailwind v4 config + imports
-├── utils/
-│   └── browser.ts         # Chrome messaging helpers
-├── assets/                # Extension icons
-└── manifest.ts            # Auto-generates manifest.json
-```
-
-## Quick Reload Shortcut
-
-The template includes a `Ctrl+Space` command to reload the extension during development. Set it up at `chrome://extensions/shortcuts`.
-
-To disable it for production, remove the `commands` block from `src/manifest.ts` and the `chrome.commands` listener from the service worker.
-
-## Debugging Content Scripts
-
-Content scripts are bundled as IIFE builds. To debug your source `.tsx` files:
-
-1. Sourcemaps are enabled in dev by default (`sourcemap: 'inline'` in `vite.config.content.ts`).
-2. Run `pnpm dev` to build with inline sourcemaps.
-3. Open DevTools (`F12`) on any page where the content script runs.
-4. **Sources** → **Page** → find the source map tree for your content script. Your original `.tsx` files appear there with full breakpoint support.
-5. Or just add `debugger` statements directly in your code.
-
-For the **service worker**, go to `chrome://extensions` → click **"Inspect views: service worker"**.
-
-## Content Scripts (Auto-Discovery)
-
-Content scripts are auto-discovered from `src/content-scripts/`. Each subfolder with an `index.tsx` becomes a content script — no config files to edit, no build scripts to update.
-
-### Add a new content script
-
-```bash
-mkdir src/content-scripts/github
-```
-
-Create `src/content-scripts/github/index.tsx`:
-
-```tsx
-console.log('Running on GitHub!')
-```
-
-Optionally add `src/content-scripts/github/config.json` to control which sites it runs on:
-
-```json
-{ "matches": ["https://github.com/*"] }
-```
-
-If no `config.json` is provided, defaults to `<all_urls>`.
-
-That's it. Run `pnpm build` — it's automatically built to `dist/js/content-github.js` and registered in the manifest.
-
-## Customizing Tailwind
-
-Tailwind v4 uses CSS-based configuration. Edit `src/styles/index.css` to add custom colors, fonts, and design tokens under `@theme`.
+Logs are tagged `[adskip:inject]`, `[adskip:content]`, and `[adskip:bg]`. Inspect the service worker via `chrome://extensions` → **Inspect views: service worker**.
 
 ## License
 
