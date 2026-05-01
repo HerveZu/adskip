@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { CaptionsOff, Check, X } from 'lucide-react'
 import styles from '@/styles/index.css?inline'
@@ -200,7 +200,6 @@ function App() {
     const [videoId, setVideoId] = useState<string | null>(currentVideoId)
     const [segments, setSegments] = useState<AdSegment[]>([])
     const [cancelled, setCancelled] = useState<Set<string>>(new Set())
-    const [silenced, setSilenced] = useState<Set<string>>(new Set())
     const [tMs, setTMs] = useState(0)
     const [video, setVideo] = useState<HTMLVideoElement | null>(null)
     const [settings, setSettings] = useState({ autoSkip: true, prerollSeconds: 10 })
@@ -254,7 +253,6 @@ function App() {
         const onChange = () => {
             setVideoId(currentVideoId)
             setCancelled(new Set())
-            setSilenced(new Set())
             setToastDismissed(false)
             setLastSkipped(null)
         }
@@ -311,42 +309,47 @@ function App() {
         prerollSeconds: settings.prerollSeconds,
     })
 
-    useEffect(() => {
-        if (skip.shouldSkipTo == null || !video || !skip.activeWarning || !videoId) return
-        if (Math.abs(video.currentTime - skip.shouldSkipTo) < 0.5) return
-        const seg = skip.activeWarning
-        const durationMs = seg.endMs - seg.startMs
-        const at = Date.now()
-        video.currentTime = skip.shouldSkipTo
-        setLastSkipped({ segId: seg.id, seconds: Math.round(durationMs / 1000), at })
+    const performSkip = useCallback(
+        (seg: AdSegment) => {
+            if (!video || !videoId) return
+            const target = seg.endMs / 1000 + 0.05
+            if (Math.abs(video.currentTime - target) < 0.5) return
+            const durationMs = seg.endMs - seg.startMs
+            const at = Date.now()
+            video.currentTime = target
+            setLastSkipped({ segId: seg.id, seconds: Math.round(durationMs / 1000), at })
 
-        const title = (document.title || '').replace(/\s*-\s*YouTube\s*$/, '').trim()
-        chrome.runtime
-            .sendMessage<RuntimeMessage>({
-                type: 'RECORD_SKIP',
-                record: {
-                    id: `${videoId}-${seg.id}-${at}`,
-                    videoId,
-                    videoTitle: title,
-                    summary: seg.summary,
-                    durationMs,
-                    skippedAt: at,
-                },
-            })
-            .catch(() => {})
-    }, [skip.shouldSkipTo, video, skip.activeWarning, videoId])
+            const title = (document.title || '').replace(/\s*-\s*YouTube\s*$/, '').trim()
+            chrome.runtime
+                .sendMessage<RuntimeMessage>({
+                    type: 'RECORD_SKIP',
+                    record: {
+                        id: `${videoId}-${seg.id}-${at}`,
+                        videoId,
+                        videoTitle: title,
+                        summary: seg.summary,
+                        durationMs,
+                        skippedAt: at,
+                    },
+                })
+                .catch(() => {})
+        },
+        [video, videoId]
+    )
+
+    useEffect(() => {
+        if (skip.shouldSkipTo == null || !skip.activeWarning) return
+        performSkip(skip.activeWarning)
+    }, [skip.shouldSkipTo, skip.activeWarning, performSkip])
 
     const toastVisible =
         !toastDismissed &&
         videoId !== null &&
         (captionStatus === 'unavailable' || captionStatus === 'fetch-failed')
 
-    const showWarning =
-        !!skip.activeWarning && !silenced.has(skip.activeWarning.id)
-
     return (
         <>
-            {showWarning && skip.activeWarning && (
+            {skip.activeWarning && (
                 <Overlay
                     segment={skip.activeWarning}
                     secondsUntilSkip={skip.secondsUntilSkip ?? 0}
@@ -359,13 +362,7 @@ function App() {
                             return next
                         })
                     }
-                    onDismiss={() =>
-                        setSilenced(prev => {
-                            const next = new Set(prev)
-                            next.add(skip.activeWarning!.id)
-                            return next
-                        })
-                    }
+                    onSkipNow={() => performSkip(skip.activeWarning!)}
                 />
             )}
             {toastVisible && (
